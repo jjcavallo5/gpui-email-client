@@ -1,8 +1,9 @@
-use crate::auth::env;
+use crate::auth::env::OAuthEnv;
+use crate::auth::schemas::GoogleOAuthTokenResult;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::TryRng;
 use rand::rngs::SysRng;
-use reqwest::Client;
+use reqwest::{Client, Error};
 use sha2::{Digest, Sha256};
 
 pub fn generate_pkce_verifier() -> Result<String, <SysRng as TryRng>::Error> {
@@ -15,8 +16,11 @@ pub fn create_code_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier))
 }
 
-pub fn create_oauth_url(challenge: &str, redirect_uri: &str) -> anyhow::Result<String> {
-    let oauth_env = env::get_oauth_env()?;
+pub fn create_oauth_url(
+    challenge: &str,
+    redirect_uri: &str,
+    oauth_env: &OAuthEnv,
+) -> anyhow::Result<String> {
     let client = Client::new();
     let request = client
         .get("https://accounts.google.com/o/oauth2/v2/auth")
@@ -33,4 +37,29 @@ pub fn create_oauth_url(challenge: &str, redirect_uri: &str) -> anyhow::Result<S
         .build()?;
 
     Ok(request.url().to_string())
+}
+
+pub async fn exchange_token(
+    oauth_env: &OAuthEnv,
+    code: &str,
+    redirect_uri: &str,
+    verifier: &str,
+) -> anyhow::Result<GoogleOAuthTokenResult> {
+    let client = Client::new();
+    let response = client
+        .get("https://oauth2.googleapis.com/token")
+        .query(&[
+            ("client_id", oauth_env.client_id.as_str()),
+            ("client_secret", oauth_env.client_secret.as_str()),
+            ("code", code),
+            ("redirect_uri", redirect_uri),
+            ("code_verifier", verifier),
+            ("grant_type", "authorization_code"),
+        ])
+        .send()
+        .await?
+        .text()
+        .await?;
+    let valid: GoogleOAuthTokenResult = serde_json::from_str(response.as_str())?;
+    return Ok(valid);
 }
