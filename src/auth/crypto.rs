@@ -3,10 +3,10 @@ use crate::auth::schemas::GoogleOAuthTokenResult;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::TryRng;
 use rand::rngs::SysRng;
-use reqwest::{Client, Error};
+use reqwest::Client;
 use sha2::{Digest, Sha256};
 
-pub fn generate_pkce_verifier() -> Result<String, <SysRng as TryRng>::Error> {
+pub fn generate_random_url_safe_token() -> Result<String, <SysRng as TryRng>::Error> {
     let mut bytes = [0u8; 64];
     SysRng.try_fill_bytes(&mut bytes)?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
@@ -17,15 +17,17 @@ pub fn create_code_challenge(verifier: &str) -> String {
 }
 
 pub fn create_oauth_url(
+    oauth_env: &OAuthEnv,
     challenge: &str,
     redirect_uri: &str,
-    oauth_env: &OAuthEnv,
+    state: &str,
 ) -> anyhow::Result<String> {
     let client = Client::new();
     let request = client
         .get("https://accounts.google.com/o/oauth2/v2/auth")
         .query(&[
             ("client_id", oauth_env.client_id.as_str()),
+            ("state", state),
             ("redirect_uri", redirect_uri),
             ("response_type", "code"),
             ("scope", "https://www.googleapis.com/auth/gmail.readonly"),
