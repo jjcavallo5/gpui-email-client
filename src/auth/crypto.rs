@@ -1,9 +1,10 @@
-use crate::auth::env::OAuthEnv;
 use crate::auth::schemas::GoogleOAuthTokenResult;
+use crate::auth::{env::OAuthEnv, schemas::GoogleOAuthRefreshTokenResult};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::TryRng;
 use rand::rngs::SysRng;
 use reqwest::Client;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 pub fn generate_random_url_safe_token() -> Result<String, <SysRng as TryRng>::Error> {
@@ -49,19 +50,41 @@ pub async fn exchange_token(
 ) -> anyhow::Result<GoogleOAuthTokenResult> {
     let client = Client::new();
     let response = client
+        .post("https://oauth2.googleapis.com/token")
+        .json(&json!({
+            "client_id": oauth_env.client_id,
+            "client_secret": oauth_env.client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": verifier,
+            "grant_type": "authorization_code"
+        }))
+        .send()
+        .await?
+        .text()
+        .await?;
+    println!("Response: {}", response);
+    let valid: GoogleOAuthTokenResult = serde_json::from_str(response.as_str())?;
+    return Ok(valid);
+}
+
+pub async fn refresh_token(
+    oauth_env: &OAuthEnv,
+    refresh_token: &str,
+) -> anyhow::Result<GoogleOAuthRefreshTokenResult> {
+    let client = Client::new();
+    let response = client
         .get("https://oauth2.googleapis.com/token")
         .query(&[
             ("client_id", oauth_env.client_id.as_str()),
             ("client_secret", oauth_env.client_secret.as_str()),
-            ("code", code),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", verifier),
-            ("grant_type", "authorization_code"),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
         ])
         .send()
         .await?
         .text()
         .await?;
-    let valid: GoogleOAuthTokenResult = serde_json::from_str(response.as_str())?;
+    let valid: GoogleOAuthRefreshTokenResult = serde_json::from_str(response.as_str())?;
     return Ok(valid);
 }
