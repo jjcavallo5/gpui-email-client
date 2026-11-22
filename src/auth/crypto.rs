@@ -88,3 +88,39 @@ pub async fn refresh_token(
     let valid: GoogleOAuthRefreshTokenResult = serde_json::from_str(response.as_str())?;
     return Ok(valid);
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_generate_random_url_save_token() {
+        generate_random_url_safe_token().expect("Token failed");
+    }
+
+    #[test]
+    fn test_create_code_challenge() {
+        let token = generate_random_url_safe_token().expect("Token failed");
+        create_code_challenge(&token);
+    }
+
+    #[test]
+    fn test_create_oauth_url() {
+        let oauth_env = OAuthEnv {
+            client_id: "test-client-id".into(),
+            client_secret: "test-client-secret".into(),
+        };
+        let res = create_oauth_url(
+            &oauth_env,
+            "test-challenge",
+            "http://redirect:8080",
+            "test-state",
+        )
+        .expect("Failed to create url");
+
+        assert!(res.contains("client_id=test-client-id"));
+        assert!(res.contains("redirect_uri=http"));
+        assert!(res.contains("state=test-state"));
+        assert!(res.contains("https://accounts.google.com/o/oauth2/v2/auth"));
+    }
+}
