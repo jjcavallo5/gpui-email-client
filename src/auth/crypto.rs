@@ -22,7 +22,7 @@ pub fn create_oauth_url(
     challenge: &str,
     redirect_uri: &str,
     state: &str,
-) -> anyhow::Result<String> {
+) -> Result<String, reqwest::Error> {
     let client = Client::new();
     let request = client
         .get("https://accounts.google.com/o/oauth2/v2/auth")
