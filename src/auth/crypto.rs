@@ -6,6 +6,7 @@ use rand::rngs::SysRng;
 use reqwest::Client;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 pub fn generate_random_url_safe_token() -> Result<String, <SysRng as TryRng>::Error> {
     let mut bytes = [0u8; 64];
@@ -42,12 +43,21 @@ pub fn create_oauth_url(
     Ok(request.url().to_string())
 }
 
+#[derive(Debug, Error)]
+pub enum ExchangeTokenError {
+    #[error("Request failed")]
+    RequestError(#[from] reqwest::Error),
+
+    #[error("Response validation failed")]
+    ValidationError(#[from] serde_json::Error),
+}
+
 pub async fn exchange_token(
     oauth_env: &OAuthEnv,
     code: &str,
     redirect_uri: &str,
     verifier: &str,
-) -> anyhow::Result<GoogleOAuthTokenResult> {
+) -> Result<GoogleOAuthTokenResult, ExchangeTokenError> {
     let client = Client::new();
     let response = client
         .post("https://oauth2.googleapis.com/token")

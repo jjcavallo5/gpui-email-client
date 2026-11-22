@@ -1,6 +1,10 @@
+use crate::auth::crypto::ExchangeTokenError;
 use crate::auth::schemas::GoogleOAuthCode;
 use crate::auth::{crypto, env};
 use open;
+use rand::TryRng;
+use rand::rngs::SysRng;
+use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -80,42 +84,38 @@ async fn handle_oauth_request(
     Ok(decoded_params)
 }
 
+#[derive(Debug, Error)]
 pub enum GoogleOAuthError {
-    TcpListenerError,
-    TokenCreationError,
-    EnvironmentError,
-    UrlEncodingError,
-    SocketAcceptError,
-    TokenExchangeError,
+    #[error("Failed to create TCP listener")]
+    TcpListenerError(#[from] std::io::Error),
+
+    #[error("Failed to create OAuth token")]
+    TokenCreationError(#[source] <SysRng as TryRng>::Error),
+
+    #[error("Failed to load environment variables")]
+    EnvironmentError(#[from] std::env::VarError),
+
+    #[error("Failed to encode URL parameters")]
+    UrlEncodingError(#[from] reqwest::Error),
+
+    #[error("Failed to exchange OAuth token with Google")]
+    TokenExchangeError(#[from] ExchangeTokenError),
 }
 
 pub async fn google_oauth_flow() -> Result<(), GoogleOAuthError> {
-    let (tcp_listener, port) = match get_tcp_listener().await {
-        Ok(tcpl) => tcpl,
-        Err(_) => return Err(GoogleOAuthError::TcpListenerError),
-    };
+    let (tcp_listener, port) = get_tcp_listener().await?;
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
-    let verifier = match crypto::generate_random_url_safe_token() {
-        Ok(token) => token,
-        Err(_) => return Err(GoogleOAuthError::TokenCreationError),
-    };
-    let state_token = match crypto::generate_random_url_safe_token() {
-        Ok(token) => token,
-        Err(_) => return Err(GoogleOAuthError::TokenCreationError),
-    };
+    let verifier = crypto::generate_random_url_safe_token()
+        .map_err(|err| GoogleOAuthError::TokenCreationError(err))?;
+    let state_token = crypto::generate_random_url_safe_token()
+        .map_err(|err| GoogleOAuthError::TokenCreationError(err))?;
 
     let challenge = crypto::create_code_challenge(&verifier);
 
-    let oauth_env = match env::get_oauth_env() {
-        Ok(oa_env) => oa_env,
-        Err(_) => return Err(GoogleOAuthError::EnvironmentError),
-    };
+    let oauth_env = env::get_oauth_env()?;
 
-    let url = match crypto::create_oauth_url(&oauth_env, &challenge, &redirect_uri, &state_token) {
-        Ok(url) => url,
-        Err(_) => return Err(GoogleOAuthError::UrlEncodingError),
-    };
+    let url = crypto::create_oauth_url(&oauth_env, &challenge, &redirect_uri, &state_token)?;
 
     println!("If your web browser doesn't open, navigate to the folowing URL:");
     println!("{url}");
@@ -123,10 +123,7 @@ pub async fn google_oauth_flow() -> Result<(), GoogleOAuthError> {
 
     let code: GoogleOAuthCode = loop {
         // Accept connection
-        let (mut stream, _) = match tcp_listener.accept().await {
-            Ok(connection) => connection,
-            Err(_) => return Err(GoogleOAuthError::SocketAcceptError),
-        };
+        let (mut stream, _) = tcp_listener.accept().await?;
 
         // Parse request
         if let Ok(c) = handle_oauth_request(&mut stream, &state_token, &redirect_uri).await {
@@ -135,10 +132,7 @@ pub async fn google_oauth_flow() -> Result<(), GoogleOAuthError> {
     };
 
     let access_token =
-        match crypto::exchange_token(&oauth_env, &code.code, &redirect_uri, &verifier).await {
-            Ok(tokens) => tokens,
-            Err(_) => return Err(GoogleOAuthError::TokenExchangeError),
-        };
+        crypto::exchange_token(&oauth_env, &code.code, &redirect_uri, &verifier).await?;
 
     println!("Access Token: {}", access_token.access_token);
 
