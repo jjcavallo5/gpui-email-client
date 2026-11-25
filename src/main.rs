@@ -1,22 +1,22 @@
 mod auth;
 use crate::auth::server;
-use gpui_kit::component::{
-    button::{Button, ButtonVariants},
-    label::Label,
-};
+use gpui_kit::component::ThemeRegistry;
+use gpui_kit::component::{button::Button, label::Label, ActiveTheme, Theme};
 use gpui_kit::*;
 
 struct Home;
 
 impl Render for Home {
-    fn render(&mut self, _window: &mut Window, _ctx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .size_full()
+            .bg(cx.theme().background)
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .gap_2()
-            .child(Label::new("Hello, world!"))
+            .child(Label::new("Hello"))
             .child(
                 Button::new("hello")
                     .label("Click Me!")
@@ -39,6 +39,12 @@ async fn main() {
     // }
     application().with_assets(assets::Assets).run(|cx| {
         init(cx);
+        let theme_cfg = ThemeRegistry::global(cx)
+            .themes()
+            .get("Default Dark")
+            .cloned()
+            .expect("Failed to load theme");
+        Theme::update(cx, |current| current.apply_config(&theme_cfg));
         open_window(WindowOptions::default(), cx, |_, cx| cx.new(|_| Home))
             .expect("Failed to open app");
     });
