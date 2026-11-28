@@ -2141,7 +2141,6 @@ dependencies = [
  "base64 0.23.1",
  "dotenvy",
  "gpui-kit",
- "open",
  "rand 0.10.4",
  "reqwest",
  "serde",

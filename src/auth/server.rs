@@ -1,9 +1,8 @@
 use crate::auth::crypto::ExchangeTokenError;
 use crate::auth::schemas::GoogleOAuthCode;
 use crate::auth::{crypto, env};
-use open;
-use rand::TryRng;
 use rand::rngs::SysRng;
+use rand::TryRng;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -102,7 +101,7 @@ pub enum GoogleOAuthError {
     TokenExchangeError(#[from] ExchangeTokenError),
 }
 
-pub async fn google_oauth_flow() -> Result<(), GoogleOAuthError> {
+pub async fn google_oauth_flow(open_callback: impl FnOnce(String)) -> Result<(), GoogleOAuthError> {
     let (tcp_listener, port) = get_tcp_listener().await?;
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
@@ -119,7 +118,7 @@ pub async fn google_oauth_flow() -> Result<(), GoogleOAuthError> {
 
     println!("If your web browser doesn't open, navigate to the folowing URL:");
     println!("{url}");
-    open::that_detached(url).ok();
+    open_callback(url);
 
     let code: GoogleOAuthCode = loop {
         // Accept connection
